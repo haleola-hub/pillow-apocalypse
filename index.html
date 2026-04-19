@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#15151c" />
+
+  <title>Pillow Apocalypse — a game by Austin</title>
+  <meta name="description" content="A pillow apocalypse has hit the city. Punch pillows, gather feathers, craft wings + sword + shield + bow, defeat all 6 bed bosses. A game by Austin (age 9)." />
+
+  <!-- Open Graph (nice link previews in iMessage, Discord, Slack) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Pillow Apocalypse" />
+  <meta property="og:description" content="Punch pillows. Craft a sword. Defeat the California King. 6-level browser game by a 9-year-old." />
+  <meta property="og:site_name" content="Pillow Apocalypse" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Pillow Apocalypse" />
+  <meta name="twitter:description" content="Punch pillows. Craft a sword. Defeat the California King." />
+
+  <!-- Pillow emoji as favicon (no extra file needed) -->
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🛏️</text></svg>' />
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #15151c;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, monospace;
+      height: 100%;
+      overflow: hidden;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    canvas {
+      display: block;
+      box-shadow: 0 0 40px rgba(255, 200, 100, 0.18);
+      border-radius: 6px;
+    }
+
+    /* Loading state — removed once Kaboom mounts the canvas */
+    #loading {
+      position: absolute;
+      color: #ffc864;
+      font-size: 18px;
+      letter-spacing: 0.04em;
+      animation: pulse 1.4s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; }
+      50%      { opacity: 1; }
+    }
+
+    /* Mobile fallback — the game needs a keyboard */
+    .mobile-warning {
+      display: none;
+      padding: 32px 24px;
+      text-align: center;
+      max-width: 380px;
+      line-height: 1.5;
+    }
+    .mobile-warning h1 {
+      font-size: 30px;
+      color: #ffc864;
+      margin: 0 0 16px;
+    }
+    .mobile-warning p {
+      font-size: 16px;
+      color: #ccc;
+      margin: 8px 0;
+    }
+    .mobile-warning .credit {
+      margin-top: 20px;
+      font-size: 13px;
+      color: #888;
+    }
+    /* Show the keyboard-needed message only on real touch devices,
+       not just narrow desktop windows (the canvas auto-scales) */
+    @media (hover: none) and (pointer: coarse) {
+      canvas, #loading { display: none !important; }
+      .mobile-warning  { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">Loading Pillow Apocalypse…</div>
+
+  <div class="mobile-warning">
+    <h1>🛏️ Pillow Apocalypse</h1>
+    <p>This game needs a keyboard to play.</p>
+    <p>Open it on a laptop or desktop computer!</p>
+    <p class="credit">a game by Austin</p>
+  </div>
+
+  <!-- Kaboom 2D game framework (loaded from CDN, served over HTTPS) -->
+  <script src="https://unpkg.com/kaboom@3000.1.17/dist/kaboom.js"></script>
+  <script src="main.js"></script>
+
+  <!-- Remove the loading message once the canvas is mounted -->
+  <script>
+    (function () {
+      const interval = setInterval(function () {
+        if (document.querySelector('canvas')) {
+          const el = document.getElementById('loading');
+          if (el) el.remove();
+          clearInterval(interval);
+        }
+      }, 80);
+    })();
+  </script>
+</body>
+</html>
