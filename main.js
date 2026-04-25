@@ -36,8 +36,13 @@ const CONFIG = {
   // Shield: chance to fully block a hit (works against pillow taps AND boss ticks)
   SHIELD_BLOCK_CHANCE: 0.40,
 
-  // Wings: passive movement boost + immunity to non-boss damage
-  WINGS_SPEED_MULT: 1.6,
+  // Wings: passive movement boost + brief invuln on pillow hit (NOT total immunity)
+  WINGS_SPEED_MULT: 1.5,
+  WINGS_HIT_INVULN_SEC: 1.0,
+
+  // All crafted power-ups expire 15s after crafting; blink player in last 3s
+  POWERUP_DURATION_SEC: 15,
+  POWERUP_BLINK_SEC:    3,
 
   PILLOW_SPEED: 70,
   PILLOW_HP: 1,
@@ -104,7 +109,7 @@ const RECIPES = {
     label: "Wings", glyph: "🪽",
     cost: { feathers: 10 },
     flag: "hasWings",
-    desc: "Fly 60% faster + pillows can't touch you",
+    desc: "Fly 50% faster + brief invuln on pillow hit (15s)",
   },
   sword: {
     label: "Sword", glyph: "⚔️",
@@ -222,7 +227,7 @@ scene("title", () => {
     ["WASD / Arrows", "Move"],
     ["SPACE",          "Attack (punch / sword)"],
     ["F",              "Shoot bow"],
-    ["P",              "Pause"],
+    ["P / ESC",        "Pause + Quit menu"],
   ];
   const rightRows = [
     ["Q",  "Craft 🪽 Wings"],
@@ -439,10 +444,12 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
     feathers: inv.feathers,
     wood: inv.wood,
     string: inv.string,
-    hasWings: inv.hasWings,
-    hasSword: inv.hasSword,
-    hasShield: inv.hasShield,
-    hasBow: inv.hasBow,
+    hasWings: false,
+    hasSword: false,
+    hasShield: false,
+    hasBow: false,
+    // seconds remaining on each power-up; 0 = not active
+    powerupTimers: { hasWings: 0, hasSword: 0, hasShield: 0, hasBow: 0 },
     bossSpawned: false,
     bossDead: false,
     paused: false,
@@ -504,7 +511,7 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
   state.player = player;
   attachCharacterArt(player);
   if (state.hasWings) {
-    player.add([text("🪽", { size: 22 }), anchor("center"), pos(0, -42)]);
+    player.add([text("🪽", { size: 22 }), anchor("center"), pos(0, -42), "wingsIcon"]);
   }
 
   // ---- MOVEMENT ----
@@ -535,7 +542,40 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
     if (state.punchCooldown > 0) state.punchCooldown -= dt();
     if (state.bowCooldown > 0)   state.bowCooldown   -= dt();
     if (state.invulnTimer > 0)   state.invulnTimer   -= dt();
+
+    // Power-up timers: tick down, expire, blink in last POWERUP_BLINK_SEC
+    let minRemaining = Infinity;
+    for (const flag of ["hasWings", "hasSword", "hasShield", "hasBow"]) {
+      if (state[flag]) {
+        state.powerupTimers[flag] -= dt();
+        if (state.powerupTimers[flag] <= 0) {
+          expirePowerup(flag);
+        } else if (state.powerupTimers[flag] < minRemaining) {
+          minRemaining = state.powerupTimers[flag];
+        }
+      }
+    }
+    // Blink the player in the last 3 seconds of any power-up
+    if (minRemaining < CONFIG.POWERUP_BLINK_SEC) {
+      player.opacity = (Math.sin(time() * 14) > 0) ? 1 : 0.3;
+    } else {
+      player.opacity = 1;
+    }
   });
+
+  function expirePowerup(flag) {
+    state[flag] = false;
+    state.powerupTimers[flag] = 0;
+    if (flag === "hasWings") {
+      // Remove wings icon child from player
+      get("wingsIcon").forEach(destroy);
+    }
+    const recipeName = Object.keys(RECIPES).find((n) => RECIPES[n].flag === flag);
+    if (recipeName) {
+      showFloating(player.pos.add(vec2(0, -50)),
+        RECIPES[recipeName].glyph + " expired!", rgb(255, 180, 100));
+    }
+  }
 
   // ---- ATTACK (SPACE) — punch, or sword swing if crafted ----
   onKeyPress("space", () => {
@@ -638,6 +678,7 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
       state[stat] -= qty;
     }
     state[recipe.flag] = true;
+    state.powerupTimers[recipe.flag] = CONFIG.POWERUP_DURATION_SEC;
     onCrafted(name);
   }
 
@@ -670,7 +711,7 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
       ]);
     }
     if (name === "wings") {
-      player.add([text("🪽", { size: 22 }), anchor("center"), pos(0, -42)]);
+      player.add([text("🪽", { size: 22 }), anchor("center"), pos(0, -42), "wingsIcon"]);
     }
   }
 
@@ -718,7 +759,12 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
   // ---- PILLOW HITS PLAYER (single tap with iframes) ----
   player.onCollide("pillow", (e) => {
     if (state.invulnTimer > 0) return;
-    if (state.hasWings) return; // wings = pillow immunity
+    if (state.hasWings) {
+      // Wings: dodge this hit, but only get brief invuln (NOT total immunity)
+      showFloating(player.pos.add(vec2(0, -40)), "🪽 dodge!", rgb(180, 230, 255));
+      state.invulnTimer = CONFIG.WINGS_HIT_INVULN_SEC;
+      return;
+    }
 
     if (state.hasShield && Math.random() < CONFIG.SHIELD_BLOCK_CHANCE) {
       showFloating(player.pos.add(vec2(0, -40)), "🛡️ BLOCKED!", rgb(120, 200, 255));
@@ -910,20 +956,51 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
     });
   }
 
-  // ---- PAUSE ----
-  onKeyPress("p", () => {
-    state.paused = !state.paused;
-    if (state.paused) {
-      add([
-        text("PAUSED\n(press P to resume)", { size: 40, align: "center" }),
-        pos(width() / 2, height() / 2),
-        anchor("center"),
-        color(255, 255, 100),
-        "pauseLabel",
-      ]);
-    } else {
-      get("pauseLabel").forEach(destroy);
-    }
+  // ---- PAUSE / EXIT MENU ----
+  function openPauseMenu() {
+    state.paused = true;
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(0, 0, 0),
+      opacity(0.55),
+      "pauseLabel",
+    ]);
+    add([
+      text("PAUSED", { size: 56 }),
+      pos(width() / 2, height() / 2 - 80),
+      anchor("center"),
+      color(255, 255, 100),
+      "pauseLabel",
+    ]);
+    add([
+      text("[P] or [ESC]   Resume", { size: 24 }),
+      pos(width() / 2, height() / 2),
+      anchor("center"),
+      color(220, 220, 220),
+      "pauseLabel",
+    ]);
+    add([
+      text("[Q]            Quit to Title", { size: 24 }),
+      pos(width() / 2, height() / 2 + 36),
+      anchor("center"),
+      color(220, 220, 220),
+      "pauseLabel",
+    ]);
+  }
+  function closePauseMenu() {
+    state.paused = false;
+    get("pauseLabel").forEach(destroy);
+  }
+  function togglePause() {
+    if (state.paused) closePauseMenu();
+    else openPauseMenu();
+  }
+  onKeyPress("p", togglePause);
+  onKeyPress("escape", togglePause);
+  // Q while paused = quit to title (Q is also craft-wings, so only when paused)
+  onKeyPress("q", () => {
+    if (state.paused) go("title");
   });
 
   // ---- HUD ----
@@ -946,15 +1023,16 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
       color: rgb(255, 255, 255),
     });
 
-    // Equipped row (under resources)
-    let eq = "";
-    if (state.hasWings)  eq += "🪽 ";
-    if (state.hasSword)  eq += "⚔️ ";
-    if (state.hasShield) eq += "🛡️ ";
-    if (state.hasBow)    eq += "🏹 ";
-    if (eq) {
+    // Equipped row with countdown timers (under resources)
+    const eqParts = [];
+    const fmt = (g, t) => g + " " + Math.max(0, Math.ceil(t)) + "s";
+    if (state.hasWings)  eqParts.push(fmt("🪽", state.powerupTimers.hasWings));
+    if (state.hasSword)  eqParts.push(fmt("⚔️", state.powerupTimers.hasSword));
+    if (state.hasShield) eqParts.push(fmt("🛡️", state.powerupTimers.hasShield));
+    if (state.hasBow)    eqParts.push(fmt("🏹", state.powerupTimers.hasBow));
+    if (eqParts.length) {
       drawText({
-        text: "Equipped: " + eq.trim(),
+        text: eqParts.join("  "),
         size: 20,
         pos: vec2(width() - 20, 56),
         anchor: "topright",
