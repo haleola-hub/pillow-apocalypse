@@ -510,8 +510,46 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
   ]);
   state.player = player;
   attachCharacterArt(player);
-  if (state.hasWings) {
-    player.add([text("🪽", { size: 22 }), anchor("center"), pos(0, -42), "wingsIcon"]);
+
+  // ---- POWER-UP ICONS (above head, one per active crafted item) ----
+  const POWERUP_GLYPHS = {
+    hasWings:  "🪽",
+    hasSword:  "⚔️",
+    hasShield: "🛡️",
+    hasBow:    "🏹",
+  };
+  const POWERUP_ORDER = ["hasWings", "hasSword", "hasShield", "hasBow"];
+  state.icons = { hasWings: null, hasSword: null, hasShield: null, hasBow: null };
+  state.swordSwingTimer = 0;
+
+  function layoutPowerupIcons() {
+    const active = POWERUP_ORDER.filter((f) => state[f] && state.icons[f]);
+    const spacing = 26;
+    const startX = -((active.length - 1) * spacing) / 2;
+    active.forEach((flag, i) => {
+      // Sword icon's X is its "rest" anchor; swing animation overrides angle only
+      state.icons[flag].pos = vec2(startX + i * spacing, -50);
+    });
+  }
+
+  function addPowerupIcon(flag) {
+    if (state.icons[flag]) return;
+    const icon = player.add([
+      text(POWERUP_GLYPHS[flag], { size: 22 }),
+      pos(0, -50),
+      anchor("center"),
+      rotate(0),
+    ]);
+    state.icons[flag] = icon;
+    layoutPowerupIcons();
+  }
+
+  function removePowerupIcon(flag) {
+    if (state.icons[flag]) {
+      destroy(state.icons[flag]);
+      state.icons[flag] = null;
+    }
+    layoutPowerupIcons();
   }
 
   // ---- MOVEMENT ----
@@ -561,15 +599,23 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
     } else {
       player.opacity = 1;
     }
+
+    // Sword swing animation — fast 1.5 spin while swing timer active
+    if (state.icons.hasSword) {
+      if (state.swordSwingTimer > 0) {
+        state.swordSwingTimer -= dt();
+        const t = 1 - Math.max(0, state.swordSwingTimer) / CONFIG.PUNCH_COOLDOWN;
+        state.icons.hasSword.angle = t * 540;
+      } else {
+        state.icons.hasSword.angle = 0;
+      }
+    }
   });
 
   function expirePowerup(flag) {
     state[flag] = false;
     state.powerupTimers[flag] = 0;
-    if (flag === "hasWings") {
-      // Remove wings icon child from player
-      get("wingsIcon").forEach(destroy);
-    }
+    removePowerupIcon(flag);
     const recipeName = Object.keys(RECIPES).find((n) => RECIPES[n].flag === flag);
     if (recipeName) {
       showFloating(player.pos.add(vec2(0, -50)),
@@ -597,6 +643,7 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
 
     if (state.punchCooldown > 0) return;
     state.punchCooldown = CONFIG.PUNCH_COOLDOWN;
+    if (state.hasSword) state.swordSwingTimer = CONFIG.PUNCH_COOLDOWN;
 
     const range  = state.hasSword ? CONFIG.SWORD_RANGE  : CONFIG.PUNCH_RANGE;
     const damage = state.hasSword ? CONFIG.SWORD_DAMAGE : CONFIG.PUNCH_DAMAGE;
@@ -710,9 +757,7 @@ scene("game", ({ level = 1, inventory = null } = {}) => {
         lifespan(0.7, { fade: 0.5 }),
       ]);
     }
-    if (name === "wings") {
-      player.add([text("🪽", { size: 22 }), anchor("center"), pos(0, -42), "wingsIcon"]);
-    }
+    addPowerupIcon(recipe.flag);
   }
 
   // ---- ENEMY SPAWNING ----
